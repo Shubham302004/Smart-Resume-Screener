@@ -1,0 +1,7 @@
+flask
+flask-cors
+sentence-transformers
+pymupdf
+python-docx
+spacy
+ipython
