@@ -120,7 +120,7 @@ Grades: **A** ≥ 80 · **B** ≥ 65 · **C** ≥ 50 · **D** ≥ 35 · else **F
 └── README.md
 ```
 
-**Known limitations:** scanned image-only PDFs have no text layer (no OCR), and the LLM's semantic sub-scores may vary by ±0.01–0.02 between runs — skills, years, grades, and rankings do not.
+**Known limitations:** scanned image-only PDFs have no text layer (no OCR), and Gemini's semantic sub-scores occasionally drift by one band (±0.1, i.e. ±0.015–0.03 on the final score) between runs — skills, years, grades, and rankings do not. Only the summary wording is expected to differ run-to-run.
 
 ---
 

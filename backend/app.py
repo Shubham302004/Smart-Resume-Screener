@@ -241,6 +241,112 @@ SKILL_ALIASES = {
     "problem solving": ["analytical thinking", "critical thinking", "troubleshooting"],
     "leadership": ["mentoring", "team lead"],
     "docker": ["containerization", "containers", "dockerfile", "docker compose"],
+
+    # --- languages & scripting ---
+    "rust": ["rust-lang", "rust programming"],
+    "golang": ["go lang", "go language"],  # bare "go" intentionally excluded (too ambiguous)
+    "perl": [],
+    "vba": ["visual basic for applications", "excel macros"],
+    "json": [],
+    "xml": [],
+    "embedded systems": ["embedded c", "microcontroller", "microcontrollers", "firmware", "stm32"],
+    "verilog": [],
+    "vhdl": [],
+    "arduino": [],
+    "raspberry pi": ["raspberrypi", "rpi"],
+
+    # --- security & web ---
+    "oauth": ["oauth2", "oauth 2.0"],
+    "jwt": ["json web token", "json web tokens"],
+    "websockets": ["websocket"],
+    "soap": ["simple object access protocol"],
+    "swagger": ["openapi", "open api specification"],
+    "cybersecurity": ["cyber security", "information security", "infosec", "application security"],
+    "penetration testing": ["pentest", "pen testing", "ethical hacking", "burp suite"],
+    "nginx": [],
+
+    # --- devops, cloud & infra ---
+    "devops": ["dev ops"],
+    "sre": ["site reliability engineering"],
+    "prometheus": [],
+    "grafana": [],
+    "datadog": [],
+    "helm": ["helm charts"],
+    "openshift": [],
+    "serverless": ["serverless computing", "faas", "edge computing"],
+    "ollama": [],
+
+    # --- data engineering & databases ---
+    "databricks": [],
+    "dbt": [],
+    "flink": ["apache flink"],
+    "cassandra": ["apache cassandra"],
+    "neo4j": [],
+    "duckdb": [],
+    "data warehousing": ["data warehouse", "warehouse modelling", "snowflake schema"],
+    "dplyr": [],
+    "tidyverse": [],
+    "shiny": ["r shiny"],
+    "plotly": [],
+    "statsmodels": [],
+    "mlflow": ["ml flow"],
+    "weights & biases": ["wandb", "weights and biases"],
+    "kubeflow": [],
+    "data visualization": ["data visualisation", "data viz", "visualization", "visualisation"],
+    "looker": [],
+    "qlik": [],
+
+    # --- AI / LLM stack ---
+    "llamaindex": ["llama index", "llama-index"],
+    "autogen": ["auto-gen", "microsoft autogen"],
+    "crewai": ["crew ai"],
+    "gradio": [],
+    "bert": [],
+    "whisper": [],
+    "opencv": ["cv2", "open cv"],
+    "yolo": ["yolov5", "yolov8", "yolo-v5"],
+    "stable diffusion": ["stablediffusion", "diffusers", "latent diffusion"],
+
+    # --- testing, tooling & practices ---
+    "jira": [],
+    "confluence": [],
+    "postman": [],
+    "selenium": [],
+    "playwright": [],
+    "cypress": [],
+    "figma": [],
+    "pytest": [],
+    "jest": [],
+    "junit": [],
+    "maven": [],
+    "gradle": [],
+    "mockito": [],
+    "tdd": ["test driven development", "test-driven development"],
+    "unit testing": ["unit tests", "unit test"],
+    "integration testing": ["integration tests"],
+    "design patterns": ["design pattern"],
+    "system design": ["system architecture", "architecture design"],
+    "object oriented": ["oop", "object-oriented", "object oriented programming", "oops"],
+
+    # --- platforms, tools & engineering domains ---
+    "android": [],
+    "ios": [],
+    "flutter": [],
+    "react native": ["react-native"],
+    "microsoft office": ["ms office", "office suite", "ms word", "powerpoint", "power point"],
+    "project management": ["pmp", "project planner"],
+    "kanban": [],
+    "autocad": ["auto cad"],
+    "solidworks": ["solid works"],
+    "catia": [],
+    "ansys": [],
+    "unity": ["unity3d", "unity engine"],
+    "unreal engine": ["unreal", "ue5"],
+    "blender": [],
+    "simulink": [],
+    "stakeholder management": ["stakeholder communication"],
+    "attention to detail": ["detail oriented", "detail-oriented", "meticulous"],
+    "time management": ["prioritization", "prioritisation"],
 }
 
 NICE_CUE_WORDS = (
@@ -329,8 +435,11 @@ WORK_INDICATORS = (
     "researcher", "tutor", "member",
 )
 
+# Month can be a name ("Jan 2022"), a number ("01/2022"), or omitted ("2022")
+_DATE_PREFIX = r"(?:[a-z]{3,9}\s+|\d{1,2}/)?"
 DATE_RANGE_RE = re.compile(
-    r"(?:[a-z]{3,9}\s+)?(\d{4})\s*(?:[-\u2013\u2014]|\bto\b)\s*(?:[a-z]{3,9}\s+)?(\d{4}|present|current|till|now)"
+    _DATE_PREFIX + r"(\d{4})(?:/\d{1,2})?\s*(?:[-\u2013\u2014]|\bto\b)\s*"
+    + _DATE_PREFIX + r"(\d{4}|present|current|till|now)(?:/\d{1,2})?"
 )
 
 
@@ -461,8 +570,8 @@ Scoring rules — give INTEGER scores from 0 to 10 (never decimals):
 - Output ONLY valid JSON, no markdown fences or extra text.
 """
 
-    try:
-        response = client.models.generate_content(
+    def _generate():
+        return client.models.generate_content(
             model=model_name,
             contents=prompt,
             config=genai_types.GenerateContentConfig(
@@ -470,16 +579,27 @@ Scoring rules — give INTEGER scores from 0 to 10 (never decimals):
                 temperature=0.0,
             ),
         )
-        return coerce_json(response.text or "")
-    except Exception as e:
-        msg = str(e)
-        if "404" in msg or "not found" in msg.lower() or "is not supported" in msg.lower():
-            raise HTTPException(status_code=400,
-                                detail=f"Model '{model_name}' is unavailable for this key. Click Fetch Live and pick another model.")
-        if "API key" in msg or "403" in msg or "401" in msg or "PERMISSION_DENIED" in msg or "UNAUTHENTICATED" in msg:
-            raise HTTPException(status_code=400,
-                                detail="Invalid or restricted Gemini API key. Check the key at aistudio.google.com.")
-        raise HTTPException(status_code=400, detail=f"Gemini error: {msg}")
+
+    for attempt in range(2):  # one quick retry for transient overload
+        try:
+            return coerce_json((_generate().text or ""))
+        except Exception as e:
+            msg = str(e)
+            low = msg.lower()
+            transient = ("503" in msg or "UNAVAILABLE" in msg or "overloaded" in low or "high demand" in low)
+            if transient and attempt == 0:
+                continue
+            if transient:
+                raise HTTPException(status_code=503, detail="Gemini is handling high demand right now — please try again in a moment.")
+            if "429" in msg or "RESOURCE_EXHAUSTED" in msg or "quota" in low or "rate limit" in low:
+                raise HTTPException(status_code=429, detail="Gemini rate limit or quota exceeded — wait a minute and try again.")
+            if "404" in msg or "not found" in low or "is not supported" in low:
+                raise HTTPException(status_code=400,
+                                    detail=f"Model '{model_name}' is unavailable for this key. Click Fetch Live and pick another model.")
+            if "API key" in msg or "403" in msg or "401" in msg or "PERMISSION_DENIED" in msg or "UNAUTHENTICATED" in msg:
+                raise HTTPException(status_code=400,
+                                    detail="Invalid or restricted Gemini API key. Check the key at aistudio.google.com.")
+            raise HTTPException(status_code=400, detail=f"Gemini error: {msg}")
 
 
 def write_results_csv(results: List[dict]) -> str:
