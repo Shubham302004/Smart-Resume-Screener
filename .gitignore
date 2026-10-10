@@ -1,0 +1,31 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+build/
+dist/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/dist-ssr/
+
+# App runtime (regenerated)
+backend/uploads/
+backend/results/
+backend/results.csv
+
+# Env / secrets
+.env
+*.local
+
+# Editors / OS
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.sln
+*.sw?
