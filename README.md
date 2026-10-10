@@ -1,12 +1,12 @@
-# 🎯 Smart Resume Screener (Groq LLM + FastAPI)
+# 🎯 Smart Resume Screener (Gemini LLM + FastAPI)
 
-An AI-powered resume screening tool that automatically analyzes job descriptions, extracts required skills, and ranks candidates with human-level accuracy using **Groq LLM**.
+An AI-powered resume screening tool that automatically analyzes job descriptions, extracts required skills, and ranks candidates with human-level accuracy using **Google Gemini**.
 
 ---
 
 ## 🚀 Features
 
-- **Groq LLM Semantic Scoring** — Experience, education, and summary fit judged by the LLM (temperature 0 + fixed seed for stability).
+- **Gemini LLM Semantic Scoring** — Experience, education, and summary fit judged by Gemini (`temperature: 0`) for maximum run-to-run stability.
 - **Deterministic Skill Matching** — Required/nice-to-have skills extracted from the JD by code (same input = same output, every run), matched against resumes with alias awareness (`sklearn` = `scikit-learn`, `torch` = `pytorch`). Skill numbers can never hallucinate or drift between runs.
 - **Grade System** — Candidates graded A–F with professional plain-English verdicts and detailed AI evaluation summaries.
 - **Best Fit Badge** — Top candidate is highlighted automatically.
@@ -21,7 +21,7 @@ An AI-powered resume screening tool that automatically analyzes job descriptions
 
 **Backend**
 - Python + FastAPI + Uvicorn
-- Groq Python SDK (`groq`)
+- Google GenAI Python SDK (`google-genai`)
 - PyMuPDF (PDF parsing)
 - python-docx (DOCX parsing)
 
@@ -77,13 +77,13 @@ Frontend will start on `http://localhost:5173`.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/match` | Upload JD, Groq API key, model choice, & resumes (max 10 files, 10 MB each, PDF/DOCX); get ranked LLM results + per-run CSV |
+| POST | `/match` | Upload JD, Gemini API key, model choice, & resumes (max 10 files, 10 MB each, PDF/DOCX); get ranked results + per-run CSV |
 | GET | `/download` | Download the latest screening results as CSV |
 | GET | `/download/{filename}` | Download a specific run's CSV |
-| POST | `/models` | Fetch live chat-capable Groq models for your API key |
+| POST | `/models` | Fetch live Gemini models for your API key (newest first) |
 | GET | `/health` | Health check |
 
-> **First run:** paste your Groq key, click **Fetch Live**, pick a model from the dropdown, then analyze. Model IDs change over time, so always fetch live instead of typing one from memory.
+> **First run:** paste your Gemini key from [Google AI Studio](https://aistudio.google.com/apikey), click **Fetch Live**, pick a model from the dropdown, then analyze. Model IDs change over time, so always fetch live instead of typing one from memory.
 
 ---
 

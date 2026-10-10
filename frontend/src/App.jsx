@@ -190,8 +190,8 @@ function CandidateCard({ res, rank, expanded, onToggle }) {
 
 export default function App() {
   const [jobDescription, setJobDescription] = useState("");
-  const [groqApiKey, setGroqApiKey] = useState(() => localStorage.getItem("groq_api_key") || "");
-  const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem("groq_model") || "");
+  const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem("gemini_api_key") || "");
+  const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem("gemini_model") || "");
   const [availableModels, setAvailableModels] = useState([]);
   const [downloadFile, setDownloadFile] = useState(null);
   const [loadingModels, setLoadingModels] = useState(false);
@@ -208,25 +208,25 @@ export default function App() {
   const [filterGrade, setFilterGrade] = useState("ALL");
 
   useEffect(() => {
-    if (groqApiKey) localStorage.setItem("groq_api_key", groqApiKey);
-    else localStorage.removeItem("groq_api_key");
-  }, [groqApiKey]);
+    if (geminiApiKey) localStorage.setItem("gemini_api_key", geminiApiKey);
+    else localStorage.removeItem("gemini_api_key");
+  }, [geminiApiKey]);
 
   useEffect(() => {
-    if (selectedModel) localStorage.setItem("groq_model", selectedModel);
-    else localStorage.removeItem("groq_model");
+    if (selectedModel) localStorage.setItem("gemini_model", selectedModel);
+    else localStorage.removeItem("gemini_model");
   }, [selectedModel]);
 
   const handleFetchModels = async () => {
-    if (!groqApiKey.trim()) {
-      setError("Please enter your Groq API Key first to fetch models.");
+    if (!geminiApiKey.trim()) {
+      setError("Please enter your Gemini API Key first to fetch models.");
       return;
     }
     setError("");
     setLoadingModels(true);
     try {
       const formData = new FormData();
-      formData.append("groq_api_key", groqApiKey);
+      formData.append("api_key", geminiApiKey);
       const res = await fetch(`${API}/models`, { method: "POST", body: formData });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -240,7 +240,7 @@ export default function App() {
         }
       }
     } catch (err) {
-      setError(err.message || "Could not fetch models from Groq.");
+      setError(err.message || "Could not fetch models from Gemini.");
     } finally {
       setLoadingModels(false);
     }
@@ -261,8 +261,8 @@ export default function App() {
       setError("Please provide a job description and at least one resume.");
       return;
     }
-    if (!groqApiKey.trim()) {
-      setError("Please provide your Groq API Key.");
+    if (!geminiApiKey.trim()) {
+      setError("Please provide your Gemini API Key.");
       return;
     }
     if (!selectedModel.trim()) {
@@ -278,7 +278,7 @@ export default function App() {
 
     const formData = new FormData();
     formData.append("job_desc", jobDescription);
-    formData.append("groq_api_key", groqApiKey);
+    formData.append("api_key", geminiApiKey);
     formData.append("model_name", selectedModel.trim());
     files.forEach(f => formData.append("resumes", f));
 
@@ -363,33 +363,33 @@ export default function App() {
           {/* Header */}
           <div className="fade-up" style={{ textAlign: "center", marginBottom: 52 }}>
             <div style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "5px 14px", borderRadius: 99, border: "1px solid rgba(99,102,241,0.3)", background: "rgba(99,102,241,0.08)", color: "#818cf8", fontSize: 11, fontWeight: 700, letterSpacing: "0.07em", marginBottom: 20 }}>
-              <Brain size={11} /> GROQ LLM-POWERED SCREENING
+              <Brain size={11} /> GEMINI LLM-POWERED SCREENING
             </div>
             <h1 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: "clamp(28px, 4.5vw, 44px)", fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.15, color: "#f1f5f9", marginBottom: 14 }}>
               Smart Resume Screener
             </h1>
             <p style={{ color: "#64748b", fontSize: 15, fontWeight: 400, lineHeight: 1.6 }}>
-              Provide your Groq API Key · Fetch Live Models · Paste JD · Upload Resumes
+              Provide your Gemini API Key · Fetch Live Models · Paste JD · Upload Resumes
             </p>
           </div>
 
           {/* Input Card */}
           <div className="fade-up" style={{ ...card, marginBottom: 16, animationDelay: "0.1s", opacity: 0 }}>
             
-            {/* Groq API Key & Model Fetcher */}
+            {/* Gemini API Key & Model Fetcher */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 240px", gap: 12, marginBottom: 20 }}>
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                  <label style={{ ...label, marginBottom: 0 }}><Key size={11} style={{ display: "inline", marginRight: 5 }} /> Groq API Key</label>
-                  <a href="https://console.groq.com" target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#818cf8", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 3 }}>
+                  <label style={{ ...label, marginBottom: 0 }}><Key size={11} style={{ display: "inline", marginRight: 5 }} /> Gemini API Key</label>
+                  <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#818cf8", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 3 }}>
                     Get Free Key <ExternalLink size={10} />
                   </a>
                 </div>
                 <input
                   type="password"
-                  value={groqApiKey}
-                  onChange={e => setGroqApiKey(e.target.value)}
-                  placeholder="gsk_..."
+                  value={geminiApiKey}
+                  onChange={e => setGeminiApiKey(e.target.value)}
+                  placeholder="AIza..."
                   style={{ width: "100%", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 12, padding: "12px 16px", color: "#cbd5e1", fontSize: 14, outline: "none", transition: "border-color 0.2s" }}
                   onFocus={e => e.target.style.borderColor = "rgba(99,102,241,0.5)"}
                   onBlur={e => e.target.style.borderColor = "rgba(255,255,255,0.07)"}
@@ -397,7 +397,7 @@ export default function App() {
               </div>
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                  <label style={{ ...label, marginBottom: 0 }}><Cpu size={11} style={{ display: "inline", marginRight: 5 }} /> Groq Model</label>
+                  <label style={{ ...label, marginBottom: 0 }}><Cpu size={11} style={{ display: "inline", marginRight: 5 }} /> Gemini Model</label>
                   <button
                     onClick={handleFetchModels}
                     disabled={loadingModels}
@@ -474,8 +474,8 @@ export default function App() {
               onMouseEnter={e => { if (!loading) e.target.style.opacity = "0.88"; }}
               onMouseLeave={e => { e.target.style.opacity = "1"; }}>
               {loading
-                ? <><Loader2 size={16} className="spin" /> Groq AI Analyzing Resumes...</>
-                : <><Sparkles size={14} /> Analyze &amp; Rank with Groq LLM</>}
+                ? <><Loader2 size={16} className="spin" /> Gemini AI Analyzing Resumes...</>
+                : <><Sparkles size={14} /> Analyze &amp; Rank with Gemini LLM</>}
             </button>
 
             {(jobDescription || files.length > 0 || results.length > 0) && (
@@ -494,7 +494,7 @@ export default function App() {
             <div className="fade-up" style={{ opacity: 0, animationDelay: "0.05s", background: "rgba(16,185,129,0.04)", border: "1px solid rgba(16,185,129,0.14)", borderRadius: 16, padding: "18px 22px", marginBottom: 16 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 14 }}>
                 <Target size={13} style={{ color: "#10b981" }} />
-                <span style={{ fontSize: 11, fontWeight: 700, color: "#10b981", letterSpacing: "0.07em", textTransform: "uppercase" }}>Job Description Analysis (Groq AI)</span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: "#10b981", letterSpacing: "0.07em", textTransform: "uppercase" }}>Job Description Analysis (Gemini AI)</span>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(90px, 1fr))", gap: 8, marginBottom: 14 }}>
                 {[
