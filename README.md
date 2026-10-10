@@ -6,7 +6,7 @@ An AI-powered resume screening tool that automatically analyzes job descriptions
 
 ## 🚀 Features
 
-- **Gemini LLM Semantic Scoring** — Experience, education, and summary fit judged by Gemini (`temperature: 0`) for maximum run-to-run stability.
+- **Gemini LLM Semantic Scoring** — Experience, education, and summary fit judged by Gemini (`temperature: 0`, integer 0–10 scores) so repeat runs return the same numbers.
 - **Deterministic Skill Matching** — Required/nice-to-have skills extracted from the JD by code (same input = same output, every run), matched against resumes with alias awareness (`sklearn` = `scikit-learn`, `torch` = `pytorch`). Skill numbers can never hallucinate or drift between runs.
 - **Grade System** — Candidates graded A–F with professional plain-English verdicts and detailed AI evaluation summaries.
 - **Best Fit Badge** — Top candidate is highlighted automatically.

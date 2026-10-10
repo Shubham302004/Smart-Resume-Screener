@@ -74,6 +74,17 @@ def clamp01(value, default: float = 0.0) -> float:
     return max(0.0, min(1.0, v))
 
 
+def norm10(value, default: float = 0.0) -> float:
+    """Accept either a 0-10 integer or an already-scaled 0.0-1.0 float."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return default
+    if v > 1.0:  # 0-10 scale from the LLM
+        v = v / 10.0
+    return max(0.0, min(1.0, v))
+
+
 def grade_from_score(score: float) -> str:
     if score >= 0.8: return "A"
     if score >= 0.65: return "B"
@@ -86,9 +97,9 @@ def normalize_result(r: dict, fallback_name: str = "unknown") -> dict:
     if not isinstance(r, dict): r = {}
     return {
         "name": str(r.get("name") or fallback_name),
-        "experience_score": round(clamp01(r.get("experience_score", 0.0)), 3),
-        "education_score": round(clamp01(r.get("education_score", 0.0)), 3),
-        "summary_score": round(clamp01(r.get("summary_score", 0.0)), 3),
+        "experience_score": round(norm10(r.get("experience_score", 0.0)), 2),
+        "education_score": round(norm10(r.get("education_score", 0.0)), 2),
+        "summary_score": round(norm10(r.get("summary_score", 0.0)), 2),
         "years_experience": max(0, int(r.get("years_experience", 0) or 0)),
         "summary": str(r.get("summary") or ""),
     }
@@ -432,19 +443,20 @@ Return strict JSON with this exact structure (use each resume's exact FILENAME a
   "results": [
     {{
       "name": "filename.pdf",
-      "experience_score": 0.85,
-      "education_score": 0.70,
-      "summary_score": 0.80,
+      "experience_score": 8,
+      "education_score": 7,
+      "summary_score": 8,
       "years_experience": 3,
       "summary": "2-3 sentence recruiter-style evaluation of this candidate against the role."
     }}
   ]
 }}
 
-Scoring rules:
-- experience_score (0.0-1.0): how relevant the candidate's actual work/projects/internships are to this JD's responsibilities. Depth, impact, and domain relevance matter more than job titles. Freshers with relevant projects should still score reasonably (0.4-0.7).
-- education_score (0.0-1.0): relevance of degree, branch, institution, and coursework to the role.
-- summary_score (0.0-1.0): overall fit conveyed by the whole resume (skills mix, projects, achievements).
+Scoring rules — give INTEGER scores from 0 to 10 (never decimals):
+- experience_score: relevance of actual work/projects/internships to this JD's responsibilities. Depth, impact, and domain relevance matter more than job titles. Freshers with relevant projects should score 5-7.
+- education_score: relevance of degree, branch, institution, and coursework to the role.
+- summary_score: overall fit of the whole resume (skills mix, projects, achievements).
+- Anchors: 0-2 no relevant background · 3-4 weak · 5-6 adequate · 7-8 strong · 9-10 exceptional. Apply the same bar to every candidate so scores are comparable.
 - years_experience: total PAID professional experience in years, computed ONLY from explicit date ranges in the resume (e.g. "Jan 2023 - Present" counts). Internships and part-time roles count. Personal/academic projects do NOT count. Use 0 for freshers with no work dates. Current year is {current_year}.
 - summary: concise prose only — no scores, grades, or lists inside it.
 - Do NOT extract or judge individual skills — a separate deterministic system handles that.
@@ -498,8 +510,21 @@ def write_results_csv(results: List[dict]) -> str:
 async def health(): return {"status": "ok", "service": "Smart Resume Screener API", "version": "3.0"}
 
 
-# Prefer newest, strongest models at the top of the dropdown
-MODEL_PREFERENCE = ("gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash")
+# Names that expose generateContent but are NOT text-chat models
+NON_TEXT_MODEL_TOKENS = (
+    "image", "tts", "transcribe", "audio", "video", "banana",
+    "robotics", "computer-use", "embedded",
+)
+
+
+def model_rank(name: str):
+    """Newest first: -latest aliases, then version number desc, lite/preview after full."""
+    ver = (999, 0) if name.endswith("-latest") else (0, 0)
+    m = re.search(r"(\d+)\.(\d+)", name)
+    if m and not name.endswith("-latest"):
+        ver = (int(m.group(1)), int(m.group(2)))
+    lighter = 1 if any(t in name for t in ("lite", "preview", "customtools")) else 0
+    return (-ver[0], -ver[1], lighter, name)
 
 
 @app.post("/models")
@@ -513,12 +538,13 @@ async def get_gemini_models(api_key: str = Form(...)):
         ]
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Gemini model fetch failed: {str(e)}")
-    gemini = sorted(n for n in names if n.startswith("gemini-"))
+    gemini = [
+        n for n in names
+        if n.startswith("gemini-") and not any(t in n for t in NON_TEXT_MODEL_TOKENS)
+    ]
     if not gemini:
         raise HTTPException(status_code=400, detail="No Gemini text models available for this API key")
-    preferred = [m for m in MODEL_PREFERENCE if m in gemini]
-    rest = [m for m in gemini if m not in preferred]
-    return {"models": preferred + rest}
+    return {"models": sorted(set(gemini), key=model_rank)}
 
 
 @app.post("/match")
