@@ -27,7 +27,7 @@ function useCountUp(target, duration = 900, active = false) {
       else setVal(target);
     };
     requestAnimationFrame(step);
-  }, [target, active]);
+  }, [target, active, duration]);
   return val;
 }
 

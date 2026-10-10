@@ -11,7 +11,7 @@ import io
 import re
 import json
 from datetime import datetime
-from typing import List, Optional
+from typing import List
 
 app = FastAPI(title="Smart Resume Screener API", version="3.0")
 
@@ -24,11 +24,9 @@ app.add_middleware(
 )
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
 RESULTS_DIR = os.path.join(BASE_DIR, "results")
 LATEST_POINTER = os.path.join(RESULTS_DIR, "latest.txt")
 
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
 # Upload guardrails

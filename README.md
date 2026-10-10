@@ -87,6 +87,43 @@ Frontend will start on `http://localhost:5173`.
 
 ---
 
+## 🧮 How Scoring Works
+
+Every number is produced by code, so the same inputs always give the same outputs:
+
+| Component | Weight | Source |
+|-----------|--------|--------|
+| Skills coverage | 35% | Deterministic JD extraction + alias matching (`sklearn` = `scikit-learn`) |
+| Experience fit | 30% | Gemini semantic score (integer 0–10, `temperature: 0`) |
+| Education fit | 15% | Gemini semantic score (integer 0–10, `temperature: 0`) |
+| Overall summary fit | 10% | Gemini semantic score (integer 0–10, `temperature: 0`) |
+| Years of experience | 10% | Deterministic date-range parsing (education dates excluded) |
+
+Grades: **A** ≥ 80 · **B** ≥ 65 · **C** ≥ 50 · **D** ≥ 35 · else **F**.
+
+---
+
+## 📁 Project Structure
+
+```
+├── backend/
+│   ├── app.py            # FastAPI app: extraction, deterministic scoring, Gemini calls, CSV export
+│   ├── requirements.txt
+│   ├── results/          # per-run CSVs (gitignored)
+│   └── uploads/          # local test resumes (gitignored)
+├── frontend/
+│   ├── src/App.jsx       # full UI: key + live model fetch, results, search/filter, export
+│   ├── index.html
+│   ├── vite.config.js
+│   └── postcss.config.cjs
+├── .gitignore
+└── README.md
+```
+
+**Known limitations:** scanned image-only PDFs have no text layer (no OCR), and the LLM's semantic sub-scores may vary by ±0.01–0.02 between runs — skills, years, grades, and rankings do not.
+
+---
+
 ## 👤 Author
 
 Built by **Shubham Ghodekar**
