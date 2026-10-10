@@ -121,69 +121,19 @@ def grade_from_score(score: float) -> str:
 
 
 def normalize_result(r: dict, fallback_name: str = "unknown") -> dict:
-    """Fill LLM output gaps so sorting/CSV can never KeyError."""
+    """Normalize one LLM semantic-score block (never carries skills or grades)."""
     if not isinstance(r, dict):
         r = {}
-    score = clamp01(r.get("score", 0.0))
-    grade = r.get("grade") if r.get("grade") in ("A", "B", "C", "D", "F") else grade_from_score(score)
-    skill_pct = r.get("skill_match_pct", 0.0)
-    try:
-        skill_pct = float(skill_pct)
-    except (TypeError, ValueError):
-        skill_pct = 0.0
-    skill_pct = max(0.0, min(100.0, skill_pct))
     years = r.get("years_experience", 0)
     try:
         years = int(years)
     except (TypeError, ValueError):
         years = 0
-
-    def str_list(v):
-        return [str(x) for x in v] if isinstance(v, list) else []
-
-    # matched_skills may be plain strings (old shape) or
-    # {skill, evidence} objects (evidence-anchored shape)
-    match_labels = []
-    match_evidence = {}
-    items = r.get("matched_skills", [])
-    if isinstance(items, str):
-        items = [items]
-    if isinstance(items, list):
-        for it in items:
-            if isinstance(it, dict):
-                label = str(it.get("skill") or "").strip()
-                ev = str(it.get("evidence") or "").strip()
-                if label:
-                    match_labels.append(label)
-                    if ev:
-                        match_evidence[label.lower()] = ev
-            elif it is not None:
-                s = str(it).strip()
-                if s:
-                    match_labels.append(s)
-
-    def clean(skills):
-        seen, out = set(), []
-        for s in skills:
-            key = s.strip().lower()
-            if key and key not in seen:
-                seen.add(key)
-                out.append(key)
-        return out
-
     return {
         "name": str(r.get("name") or fallback_name),
-        "score": round(score, 4),
-        "grade": grade,
-        "verdict": str(r.get("verdict") or ""),
-        "skills_score": round(clamp01(r.get("skills_score", 0.0)), 3),
         "experience_score": round(clamp01(r.get("experience_score", 0.0)), 3),
         "education_score": round(clamp01(r.get("education_score", 0.0)), 3),
-        "skill_match_pct": round(skill_pct, 1),
-        "matched_skills": clean(match_labels),
-        "missing_skills": clean(str_list(r.get("missing_skills"))),
-        "nice_matched": clean(str_list(r.get("nice_matched"))),
-        "match_evidence": match_evidence,
+        "summary_score": round(clamp01(r.get("summary_score", 0.0)), 3),
         "years_experience": max(0, years),
         "summary": str(r.get("summary") or ""),
     }
@@ -240,23 +190,234 @@ SKILL_ALIASES = {
     "power bi": ["powerbi"],
     "mlops": ["ml ops", "ml operations"],
     "agile": ["agile methodology", "scrum"],
+    "docker": ["containerization", "containers", "dockerfile", "docker compose"],
+    "linux": ["unix", "ubuntu"],
+    "data structures": ["data structure", "dsa"],
+    "algorithms": ["algorithm", "algorithmic"],
+    "prompt engineering": ["prompting", "prompt design"],
+    "embeddings": ["embedding", "vector embeddings", "text embeddings"],
+    "transformers": ["transformer models", "attention mechanism"],
+    "rag": ["retrieval augmented generation", "retrieval-augmented generation"],
+    "llm": ["llms", "large language model", "large language models"],
+    "fine-tuning": ["finetuning", "fine tuning", "peft", "lora", "qlora"],
+    "langchain": ["lang chain"],
+    "langflow": [],
+    "chroma": ["chromadb", "chroma db"],
+    "faiss": [],
+    "pinecone": [],
+    "vector databases": ["vector database", "vector db", "vector store", "vector stores"],
+    "huggingface": ["hugging face"],
+    "openai": ["gpt", "gpt-3.5", "gpt-4", "chatgpt"],
+    "groq": ["groqcloud", "groq api"],
+    "anthropic": ["claude"],
+    "gemini": ["google gemini"],
+    "fastapi": ["fast api"],
+    "flask": [],
+    "streamlit": [],
+    "nodejs": ["node.js", "node js"],
+    "react": ["reactjs", "react.js"],
+    "angular": ["angularjs"],
+    "vue": ["vuejs", "vue.js"],
+    "django": [],
+    "spring": ["spring boot"],
+    "graphql": [],
+    "grpc": [],
+    "kafka": ["apache kafka"],
+    "rabbitmq": [],
+    "microservices": ["micro services", "micro-service"],
+    "spark": ["apache spark", "pyspark"],
+    "hadoop": [],
+    "airflow": ["apache airflow"],
+    "tableau": [],
+    "excel": ["ms excel", "spreadsheets", "spreadsheet"],
+    "sql": [],
+    "mysql": [],
+    "redis": [],
+    "elasticsearch": ["elastic search"],
+    "sqlite": [],
+    "bigquery": ["big query"],
+    "snowflake": [],
+    "java": [],
+    "c++": ["cpp"],
+    "c#": ["c sharp", "csharp"],
+    "kotlin": [],
+    "swift": [],
+    "scala": [],
+    "matlab": [],
+    "php": [],
+    "ruby": ["ruby on rails"],
+    "typescript": ["ts"],
+    "html": [],
+    "css": [],
+    "terraform": [],
+    "jenkins": [],
+    "ansible": [],
+    "ci/cd": ["cicd", "ci cd", "continuous integration", "continuous deployment"],
+    "bash": ["shell scripting", "shell script"],
+    "numpy": ["numerical python"],
+    "scipy": [],
+    "seaborn": [],
+    "keras": [],
+    "svm": ["support vector machine", "support vector machines"],
+    "reinforcement learning": ["reinforcement-learning", "rlhf"],
+    "generative ai": ["genai", "gen ai"],
+    "linear algebra": ["matrices", "vectors"],
+    "calculus": [],
+    "communication": ["verbal communication", "written communication", "presentation skills"],
+    "teamwork": ["team player"],
+    "collaboration": ["cross-functional", "team collaboration"],
+    "problem solving": ["analytical thinking", "critical thinking", "troubleshooting"],
+    "leadership": ["mentoring", "team lead"],
 }
 
 
+def any_variant_in_text(variants: List[str], text_lower: str) -> bool:
+    return any(re.search(r"(?<![\w.])" + re.escape(v.lower()) + r"(?![\w])", text_lower) for v in variants)
+
+
 def skill_in_text(skill: str, text_lower: str) -> bool:
-    """Check if a skill or any alias appears in lowercased resume text."""
-    candidates = [skill.lower()] + SKILL_ALIASES.get(skill.lower(), [])
-    return any(re.search(r"\b" + re.escape(p) + r"\b", text_lower) for p in candidates)
+    """Check if a skill or any alias appears in lowercased text.
+
+    Boundaries also exclude dots so dotted tokens don't false-hit
+    short aliases ("Node.js" must not match "js"; "app.py" must not
+    match "py"; "tf-idf" must not match "tf").
+    """
+    return any_variant_in_text([skill] + SKILL_ALIASES.get(skill.lower(), []), text_lower)
 
 
-def evidence_in_text(evidence: str, text_lower: str) -> bool:
-    """Check whether an LLM-provided evidence quote actually occurs in the resume."""
-    ev = re.sub(r"\s+", " ", (evidence or "").lower()).strip(' "\'')
-    if len(ev) < 4:
-        return False
-    if ev in text_lower:
-        return True
-    return len(ev) > 60 and ev[:60] in text_lower
+NICE_CUE_WORDS = (
+    "nice-to-have", "nice to have", "nice-to-haves", "bonus", "plus",
+    "preferred", "desirable", "optional", "good to have", "strong plus",
+    "a plus", "pluses",
+)
+
+# Section headers that switch nice-to-have context on/off for following lines
+NICE_HEADERS = (
+    "nice-to-have", "nice to have", "bonus", "preferred", "desirable",
+    "optional", "good to have", "plus",
+)
+OTHER_HEADERS = (
+    "about the role", "about", "responsibilities", "responsibility",
+    "requirements", "requirement", "required", "qualifications",
+    "experience", "education", "location", "benefits", "compensation",
+    "how to apply", "role", "what you'll do", "job title",
+)
+
+
+def split_sentences(text: str) -> List[str]:
+    parts = re.split(r"[\n;]+|[.!?]+\s+", text)
+    return [p.strip() for p in parts if p.strip()]
+
+
+def is_header(fragment: str, headers) -> bool:
+    head = fragment.strip().lower().rstrip(":").strip()
+    return any(head == h or head.startswith(h + " ") or head.startswith(h + ":") for h in headers)
+
+
+def extract_jd_skills(jd_text: str) -> dict:
+    """Deterministic JD skill extraction — identical output for identical input.
+
+    1. Scan the JD for every known skill/alias.
+    2. Skills appearing ONLY in nice-to-have cue sentences go to nice_to_have;
+       everything else found is required.
+    3. Years + role via regex.
+    """
+    text_lower = jd_text.lower()
+    sentences = split_sentences(jd_text)
+
+    # Section-aware cue tracking: a Nice-to-Have header marks following
+    # lines as cue sentences until another section header appears.
+    cue_flags = []
+    in_nice_section = False
+    for s in sentences:
+        if is_header(s, NICE_HEADERS):
+            in_nice_section = True
+            cue_flags.append(True)
+            continue
+        if is_header(s, OTHER_HEADERS):
+            in_nice_section = False
+            cue_flags.append(False)
+            continue
+        cue_flags.append(in_nice_section or any(c in s.lower() for c in NICE_CUE_WORDS))
+    cue_idx = {i for i, flag in enumerate(cue_flags) if flag}
+
+    required, nice = [], []
+    for skill in sorted(SKILL_ALIASES):
+        if not skill_in_text(skill, text_lower):
+            continue
+        variants = [skill] + SKILL_ALIASES[skill]
+        in_cue = any(any_variant_in_text(variants, s.lower()) for i, s in enumerate(sentences) if i in cue_idx)
+        in_plain = any(any_variant_in_text(variants, s.lower()) for i, s in enumerate(sentences) if i not in cue_idx)
+        # Skill only in cue sentences -> nice-to-have; otherwise required.
+        # (No cue sentences at all -> everything is required.)
+        if in_cue and not in_plain and cue_idx:
+            nice.append(skill)
+        else:
+            required.append(skill)
+
+    exp_match = re.search(r"(\d+)\+?\s*(?:years?|yrs?)\s+(?:of\s+)?experience", text_lower)
+    required_years = int(exp_match.group(1)) if exp_match else None
+
+    role_match = re.search(r"(?:role|position|title|job title)[:\s]+([^\n]+)", text_lower)
+    role = role_match.group(1).strip().title() if role_match else "the role"
+
+    return {
+        "required_skills": required,
+        "nice_to_have": nice,
+        "required_years": required_years,
+        "role": role,
+        "total_skills_detected": len(required) + len(nice),
+    }
+
+
+def extract_years_from_resume(text: str) -> int:
+    """Count years of experience from date ranges (deterministic)."""
+    year_ranges = re.findall(r"(20\d{2}|19\d{2})\s*[-–—to]+\s*(20\d{2}|19\d{2}|present|current)", text.lower())
+    current_year = datetime.now().year
+    ranges = []
+    for start, end in year_ranges:
+        try:
+            s = int(start)
+            e = current_year if end in ("present", "current") else int(end)
+            if 1990 <= s <= current_year and s < e and (e - s) <= 10:
+                ranges.append((s, e))
+        except ValueError:
+            pass
+    if not ranges:
+        return 0
+    ranges.sort()
+    merged = [ranges[0]]
+    for s, e in ranges[1:]:
+        if s <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], e))
+        else:
+            merged.append((s, e))
+    return min(sum(e - s for s, e in merged), 20)
+
+
+def match_resume_skills(text_lower: str, required: List[str], nice: List[str]) -> dict:
+    """Deterministic skill matching — identical output for identical input."""
+    matched = [s for s in required if skill_in_text(s, text_lower)]
+    missing = [s for s in required if not skill_in_text(s, text_lower)]
+    nice_matched = [s for s in nice if skill_in_text(s, text_lower)]
+    pct = (len(matched) / len(required) * 100) if required else 0.0
+    return {
+        "matched_skills": matched,
+        "missing_skills": missing,
+        "nice_matched": nice_matched,
+        "skill_match_pct": round(pct, 1),
+        "skills_score": round(pct / 100, 3),
+    }
+
+
+def years_score(resume_years: int, required_years) -> float:
+    if not required_years:
+        return 1.0
+    if resume_years == 0:
+        return 0.5
+    if resume_years >= required_years:
+        return 1.0
+    return resume_years / required_years
 
 
 STANDARD_VERDICTS = {
@@ -266,132 +427,6 @@ STANDARD_VERDICTS = {
     "D": "Weak match — significant gaps",
     "F": "Poor match — not recommended",
 }
-
-
-def apply_alias_correction(results: List[dict], resume_texts: List[dict], required: List[str], nice: List[str]) -> List[dict]:
-    """Rescue LLM false-missing skills via deterministic alias matching.
-
-    Only moves missing -> matched (never the reverse, so the LLM's
-    semantic matches are preserved). Recomputes pct/skills_score and
-    adjusts the overall score by the skills-component delta (35% weight).
-    """
-    texts = {rt["filename"]: (rt["text"] or "") for rt in resume_texts}
-    basenames = {os.path.basename(k): v for k, v in texts.items()}
-
-    def find_text(name: str) -> str:
-        if name in texts:
-            return texts[name]
-        if os.path.basename(name) in basenames:
-            return basenames[os.path.basename(name)]
-        return ""
-
-    req_keys = {s.lower() for s in required}
-    nice_keys = {s.lower() for s in nice}
-
-    for r in results:
-        text_lower = find_text(r.get("name", "")).lower()
-        if not text_lower.strip() or text_lower.strip() == "[could not extract text]":
-            continue
-        ev_map = r.get("match_evidence", {}) or {}
-
-        # 1. Veto hallucinations: drop "matched" skills with neither
-        #    skill/alias mention nor a verifiable evidence quote.
-        vetted = []
-        demoted = []
-        for s in r.get("matched_skills", []):
-            if skill_in_text(s, text_lower):
-                vetted.append(s)
-                continue
-            if ev_map.get(s.lower(), "") and evidence_in_text(ev_map[s.lower()], text_lower):
-                vetted.append(s)
-                continue
-            demoted.append(s)
-        matched = vetted
-        matched_keys = {s.lower() for s in matched}
-
-        # 2. Rescue false-missing skills via alias matching
-        still_missing = list(demoted)  # demoted skills rejoin missing
-        for s in r.get("missing_skills", []):
-            if s.lower() in matched_keys:
-                continue  # duplicate across lists
-            if skill_in_text(s, text_lower):
-                matched.append(s)
-                matched_keys.add(s.lower())
-            elif s.lower() not in {m.lower() for m in still_missing}:
-                still_missing.append(s)
-
-        # 3. Gap-fill: required skills the LLM put in neither list
-        for s in required:
-            key = s.strip().lower()
-            if key not in matched_keys and key not in {m.lower() for m in still_missing}:
-                if skill_in_text(s, text_lower):
-                    matched.append(key)
-                    matched_keys.add(key)
-                else:
-                    still_missing.append(key)
-
-        r["matched_skills"] = matched
-        r["missing_skills"] = still_missing
-
-        # Rescue bonus skills the LLM overlooked
-        nice_matched = list(r.get("nice_matched", []))
-        nice_keys_seen = {s.lower() for s in nice_matched}
-        for s in nice:
-            key = s.strip().lower()
-            if key not in nice_keys_seen and skill_in_text(s, text_lower):
-                nice_matched.append(key)
-                nice_keys_seen.add(key)
-        r["nice_matched"] = nice_matched
-
-        # Recompute skills numbers from the corrected lists
-        if req_keys:
-            pct = len([s for s in matched if s.lower() in req_keys]) / len(req_keys) * 100
-            new_skills = round(pct / 100, 3)
-            delta = new_skills - r.get("skills_score", 0.0)
-            r["skill_match_pct"] = round(pct, 1)
-            r["skills_score"] = new_skills
-            if abs(delta) > 1e-9:
-                new_score = clamp01(r.get("score", 0.0) + 0.35 * delta)
-                r["score"] = round(new_score, 4)
-                new_grade = grade_from_score(new_score)
-                if new_grade != r.get("grade"):
-                    r["grade"] = new_grade
-                    r["verdict"] = STANDARD_VERDICTS[new_grade]
-    return results
-
-
-def normalize_jd(jd) -> dict:
-    """Fill LLM output gaps so the frontend never crashes on malformed jd_analysis."""
-    if not isinstance(jd, dict):
-        jd = {}
-
-    def str_list(v):
-        if isinstance(v, str):
-            v = [v]
-        if not isinstance(v, list):
-            return []
-        return [str(x).strip() for x in v if str(x).strip()]
-
-    years = jd.get("required_years")
-    try:
-        years = int(years) if years is not None else None
-    except (TypeError, ValueError):
-        years = None
-
-    required = str_list(jd.get("required_skills"))
-    total = jd.get("total_skills_detected", len(required))
-    try:
-        total = int(total)
-    except (TypeError, ValueError):
-        total = len(required)
-
-    return {
-        "required_skills": required,
-        "nice_to_have": str_list(jd.get("nice_to_have")),
-        "required_years": years,
-        "role": str(jd.get("role") or "the role"),
-        "total_skills_detected": total,
-    }
 
 
 def coerce_json(content: str) -> dict:
@@ -413,7 +448,7 @@ def coerce_json(content: str) -> dict:
 # --------------------------------------------------
 # Groq LLM Powered Analysis & Scoring
 # --------------------------------------------------
-def analyze_with_groq(job_desc: str, resume_texts: List[dict], api_key: str, model_name: str = "llama-3.3-70b-versatile"):
+def analyze_with_groq(job_desc: str, resume_texts: List[dict], api_key: str, model_name: str = "openai/gpt-oss-120b"):
     try:
         client = Groq(api_key=api_key.strip())
     except Exception as e:
@@ -454,8 +489,8 @@ def analyze_with_groq(job_desc: str, resume_texts: List[dict], api_key: str, mod
     resumes_payload = "\n\n".join(chunks)
 
     prompt = f"""
-You are an expert technical recruiter and AI resume screener.
-Analyze the following Job Description (JD) and evaluate each candidate resume provided below.
+You are an expert technical recruiter. Below is a Job Description (JD) and candidate resumes.
+For EACH candidate, judge only the semantic fit of their EXPERIENCE, EDUCATION, and overall SUMMARY against the JD.
 
 JOB DESCRIPTION:
 {job_desc}
@@ -463,45 +498,27 @@ JOB DESCRIPTION:
 CANDIDATES:
 {resumes_payload}
 
-Provide your analysis in strict JSON format with the following exact structure:
+Return strict JSON with this exact structure (use each resume's exact FILENAME as "name"):
 {{
-  "jd_analysis": {{
-    "required_skills": ["python", "pytorch"],
-    "nice_to_have": ["docker"],
-    "required_years": 2,
-    "role": "Extracted Job Title",
-    "total_skills_detected": 3
-  }},
   "results": [
     {{
       "name": "filename.pdf",
-      "score": 0.85,
-      "grade": "A",
-      "verdict": "Short 1-sentence verdict",
-      "skills_score": 0.90,
       "experience_score": 0.80,
       "education_score": 0.70,
-      "skill_match_pct": 85.0,
-      "matched_skills": [{{"skill": "python", "evidence": "exact short quote from the resume proving it"}}],
-      "missing_skills": ["skill2"],
-      "nice_matched": ["skill3"],
+      "summary_score": 0.75,
       "years_experience": 3,
-      "summary": "Detailed professional evaluation summary of this candidate against the role."
+      "summary": "2-3 sentence professional evaluation of this candidate against the role."
     }}
   ]
 }}
 
-Rules for skills (important for accurate matched/missing analysis):
-- Be EXHAUSTIVE: scan the ENTIRE job description — responsibilities, requirements, and nice-to-have sections — and do not omit any tool, language, framework, platform, or methodology mentioned.
-- List every skill ATOMICALLY: one tool, language, or concept per entry.
-- Never group items, e.g. write ["pytorch", "tensorflow", "scikit-learn"], NOT ["ML/DL frameworks (PyTorch, TensorFlow, scikit-learn)"].
-- Normalize common names to lowercase canonical forms (e.g. "python", "rest apis", "prompt engineering").
-- Put genuinely optional/bonus items in nice_to_have; everything else in required_skills.
-- required_years must be a number or null; role must be the job title.
-- Alias awareness: treat common variants as the SAME skill (sklearn = scikit-learn, torch = pytorch, js = javascript, k8s = kubernetes, eda = exploratory data analysis, ml = machine learning). A resume mentioning any variant COUNTS as having the skill — never list it as missing. (Note: do NOT count "tf-idf" as TensorFlow, "lambda functions" as AWS, or file extensions like ".py" as anything but Python.)
-- matched_skills must contain ONLY skills explicitly present in the resume text (exact or alias variant). Every entry needs an "evidence" field with an exact short quote copied from the resume. Never infer or hallucinate: if the resume implies but does not state a skill, put it in missing_skills.
+Rules:
+- Each *_score is a float 0.0-1.0 judging that section's relevance to the JD. Be consistent and conservative.
+- years_experience: total professional years inferred from the resume (0 if a fresher/no dates).
+- summary: concise recruiter-style evaluation, no scores or grades inside.
+- Do NOT extract or judge individual skills — a separate deterministic system handles that.
 
-Ensure the output is valid JSON only, without markdown code blocks or extra text. Current year for experience calculation is {current_year}.
+Ensure the output is valid JSON only, without markdown code blocks or extra text. Current year is {current_year}.
 """
 
     messages = [
@@ -510,7 +527,7 @@ Ensure the output is valid JSON only, without markdown code blocks or extra text
     ]
 
     def run_call(use_json_mode: bool, max_tokens: int):
-        kwargs = {"model": model_name, "messages": messages, "max_tokens": max_tokens, "temperature": 0.1, "seed": 42}
+        kwargs = {"model": model_name, "messages": messages, "max_tokens": max_tokens, "temperature": 0.0, "seed": 42}
         if use_json_mode:
             kwargs["response_format"] = {"type": "json_object"}
         return client.chat.completions.create(**kwargs)
@@ -631,17 +648,65 @@ async def match_resumes(
             "text": extracted if extracted.strip() else "[Could not extract text]",
         })
 
+    # 1. Deterministic JD analysis (identical output for identical input)
+    jd = extract_jd_skills(job_desc)
+    required = jd["required_skills"]
+    nice = jd["nice_to_have"]
+
+    # 2. LLM semantic section scores + prose (temperature 0 + seed for stability)
     analysis_data = analyze_with_groq(job_desc, resume_texts, groq_api_key, model_name.strip())
 
     raw_results = analysis_data.get("results", [])
     if not isinstance(raw_results, list):
         raw_results = []
-    results = [normalize_result(r, fallback_name=f"resume_{i}") for i, r in enumerate(raw_results)]
+    sections = [normalize_result(r, fallback_name=f"resume_{i}") for i, r in enumerate(raw_results)]
+    by_name = {}
+    for s in sections:
+        by_name.setdefault(s["name"], s)
+        by_name.setdefault(os.path.basename(s["name"]), s)
 
-    jd = normalize_jd(analysis_data.get("jd_analysis"))
+    # 3. Deterministic per-candidate blend (stable numbers; only LLM
+    #    semantic sub-scores and prose can vary slightly between runs)
+    results = []
+    for i, rt in enumerate(resume_texts):
+        text_lower = (rt["text"] or "").lower()
+        skills = match_resume_skills(text_lower, required, nice)
 
-    # Deterministic alias safety net: rescue skills the LLM wrongly marked missing
-    results = apply_alias_correction(results, resume_texts, jd.get("required_skills", []), jd.get("nice_to_have", []))
+        sec = by_name.get(rt["filename"]) or by_name.get(os.path.basename(rt["filename"]))
+        if sec is None and i < len(sections):
+            sec = sections[i]  # order fallback if the LLM renamed files
+        if sec is None:
+            sec = normalize_result({}, fallback_name=rt["filename"])
+
+        det_years = extract_years_from_resume(rt["text"] or "")
+        years = det_years if det_years > 0 else sec.get("years_experience", 0)
+        y_score = years_score(years, jd["required_years"])
+
+        final = (
+            0.35 * skills["skills_score"]
+            + 0.30 * sec.get("experience_score", 0.0)
+            + 0.15 * sec.get("education_score", 0.0)
+            + 0.10 * sec.get("summary_score", 0.0)
+            + 0.10 * y_score
+        )
+        final = round(clamp01(final), 4)
+        grade = grade_from_score(final)
+
+        results.append({
+            "name": rt["filename"],
+            "score": final,
+            "grade": grade,
+            "verdict": STANDARD_VERDICTS[grade],
+            "skills_score": skills["skills_score"],
+            "experience_score": sec.get("experience_score", 0.0),
+            "education_score": sec.get("education_score", 0.0),
+            "skill_match_pct": skills["skill_match_pct"],
+            "matched_skills": skills["matched_skills"],
+            "missing_skills": skills["missing_skills"],
+            "nice_matched": skills["nice_matched"],
+            "years_experience": years,
+            "summary": sec.get("summary", ""),
+        })
 
     results.sort(key=lambda x: x.get("score", 0.0), reverse=True)
 
@@ -651,10 +716,6 @@ async def match_resumes(
             r["is_best"] = False
 
     download_file = write_results_csv(results) if results else None
-
-    # Strip internal evidence map from the API response
-    for r in results:
-        r.pop("match_evidence", None)
 
     return {
         "results": results,

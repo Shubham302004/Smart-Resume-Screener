@@ -6,8 +6,8 @@ An AI-powered resume screening tool that automatically analyzes job descriptions
 
 ## 🚀 Features
 
-- **Groq LLM-Powered Analysis** — Leverages state-of-the-art models (`llama-3.3-70b-versatile`, `llama-3.1-8b-instant`, `mixtral-8x7b`) for ultra-accurate semantic matching, grading, and candidate evaluation.
-- **Smart Skill Detection** — Automatically extracts required and nice-to-have skills from any Job Description.
+- **Groq LLM Semantic Scoring** — Experience, education, and summary fit judged by the LLM (temperature 0 + fixed seed for stability).
+- **Deterministic Skill Matching** — Required/nice-to-have skills extracted from the JD by code (same input = same output, every run), matched against resumes with alias awareness (`sklearn` = `scikit-learn`, `torch` = `pytorch`). Skill numbers can never hallucinate or drift between runs.
 - **Grade System** — Candidates graded A–F with professional plain-English verdicts and detailed AI evaluation summaries.
 - **Best Fit Badge** — Top candidate is highlighted automatically.
 - **Score Breakdown** — Skills coverage %, experience match, and education match per candidate.
