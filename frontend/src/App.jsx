@@ -1,9 +1,12 @@
+// Core React hooks, UI icons, and Recharts charting components
 import React, { useState, useEffect } from "react";
 import { Upload, FileText, Loader2, Download, Trophy, Star, AlertCircle, CheckCircle, XCircle, ChevronDown, ChevronUp, BarChart2, Sparkles, Target, Brain, X, Key, Cpu, ExternalLink, Search, Filter, RefreshCw } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 
+// Base URL of the FastAPI backend server (loaded from Vite environment variables or defaulting to localhost:5000)
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:5000";
 
+// Visual theme configuration (border, background, badge color, text color, and label) for each candidate grade A-F
 const GRADE_CONFIG = {
   A: { border: "rgba(16,185,129,0.4)",  bg: "rgba(16,185,129,0.07)",  badge: "#10b981", text: "#6ee7b7",  label: "Excellent" },
   B: { border: "rgba(56,189,248,0.4)",  bg: "rgba(56,189,248,0.07)",  badge: "#38bdf8", text: "#7dd3fc",  label: "Good" },
@@ -12,8 +15,10 @@ const GRADE_CONFIG = {
   F: { border: "rgba(239,68,68,0.4)",   bg: "rgba(239,68,68,0.07)",   badge: "#ef4444", text: "#fca5a5",  label: "Poor" },
 };
 
+// Palette of bar colors cycled in the candidate comparison BarChart
 const CHART_COLORS = ["#10b981", "#38bdf8", "#f59e0b", "#f97316", "#ef4444"];
 
+// Custom hook to smoothly animate a numeric score from 0 up to the target value when a card is expanded
 function useCountUp(target, duration = 900, active = false) {
   const [val, setVal] = useState(0);
   useEffect(() => {
@@ -31,6 +36,7 @@ function useCountUp(target, duration = 900, active = false) {
   return val;
 }
 
+// Horizontal progress bar component for displaying sub-scores (Skills, Experience, Education)
 function ScoreBar({ label, value, color }) {
   const v = typeof value === "number" ? value : 0;
   return (
@@ -46,6 +52,7 @@ function ScoreBar({ label, value, color }) {
   );
 }
 
+// Pill badge component for rendering an individual skill tag (matched, missing, or bonus)
 function SkillTag({ label, type }) {
   const cfg = {
     matched: { bg: "rgba(16,185,129,0.12)", border: "rgba(16,185,129,0.25)", color: "#6ee7b7", icon: <CheckCircle size={9} /> },
@@ -59,6 +66,7 @@ function SkillTag({ label, type }) {
   );
 }
 
+// Collapsible card component showing a candidate's rank, grade, overall score, AI summary, and skill breakdown
 function CandidateCard({ res, rank, expanded, onToggle }) {
   const g = GRADE_CONFIG[res.grade] || GRADE_CONFIG["F"];
   const scoreNum = Math.round((res.score || 0) * 100);
@@ -188,7 +196,9 @@ function CandidateCard({ res, rank, expanded, onToggle }) {
   );
 }
 
+// Main application component managing form inputs, model fetching, resume uploads, and screening results
 export default function App() {
+  // Application state for job description, API credentials, uploaded files, and results
   const [jobDescription, setJobDescription] = useState("");
   const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem("gemini_api_key") || "");
   const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem("gemini_model") || "");
@@ -207,16 +217,19 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterGrade, setFilterGrade] = useState("ALL");
 
+  // Persist the Gemini API key in browser localStorage when updated
   useEffect(() => {
     if (geminiApiKey) localStorage.setItem("gemini_api_key", geminiApiKey);
     else localStorage.removeItem("gemini_api_key");
   }, [geminiApiKey]);
 
+  // Persist the selected Gemini model name in browser localStorage when updated
   useEffect(() => {
     if (selectedModel) localStorage.setItem("gemini_model", selectedModel);
     else localStorage.removeItem("gemini_model");
   }, [selectedModel]);
 
+  // Fetch live text-generation Gemini models from the backend using the user's API key
   const handleFetchModels = async () => {
     if (!geminiApiKey.trim()) {
       setError("Please enter your Gemini API Key first to fetch models.");
@@ -246,16 +259,41 @@ export default function App() {
     }
   };
 
+  // Validate and append newly dropped or selected PDF/DOCX resume files (up to 10 total)
   const handleFiles = (newFiles) => {
-    const valid = Array.from(newFiles).filter(f => {
+    const incoming = Array.from(newFiles || []);
+    const valid = incoming.filter(f => {
       const lower = (f.name || "").toLowerCase();
       return lower.endsWith(".pdf") || lower.endsWith(".docx");
     });
-    setFiles(valid);
+    if (valid.length < incoming.length) {
+      setError("Only PDF (.pdf) and Word (.docx) files are supported.");
+    } else {
+      setError("");
+    }
+    if (valid.length > 0) {
+      setFiles(prev => {
+        const existingKeys = new Set(prev.map(f => `${f.name}_${f.size}`));
+        const merged = [...prev, ...valid.filter(f => !existingKeys.has(`${f.name}_${f.size}`))];
+        if (merged.length > 10) {
+          setError("Maximum 10 resumes allowed per screening run.");
+          return merged.slice(0, 10);
+        }
+        return merged;
+      });
+    }
+    const fileInput = document.getElementById("file-input");
+    if (fileInput) fileInput.value = "";
   };
 
-  const removeFile = (i) => setFiles(f => f.filter((_, idx) => idx !== i));
+  // Remove a single resume from the selected files list and reset the file input
+  const removeFile = (i) => {
+    setFiles(f => f.filter((_, idx) => idx !== i));
+    const fileInput = document.getElementById("file-input");
+    if (fileInput) fileInput.value = "";
+  };
 
+  // Submit the JD, API key, selected model, and uploaded resumes to the /match endpoint for screening
   const handleSubmit = async () => {
     if (!jobDescription.trim() || files.length === 0) {
       setError("Please provide a job description and at least one resume.");
@@ -301,6 +339,7 @@ export default function App() {
     }
   };
 
+  // Clear all form inputs, uploaded files, filters, and results to start a fresh screening session
   const handleReset = () => {
     setJobDescription("");
     setFiles([]);
@@ -318,6 +357,7 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  // Filter ranked candidates by search keyword (filename or verdict) and selected letter grade
   const filteredResults = results.filter(r => {
     const matchesSearch = r.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           (r.verdict && r.verdict.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -325,16 +365,19 @@ export default function App() {
     return matchesSearch && matchesGrade;
   });
 
+  // Format candidate names and percentage scores for the Recharts bar chart
   const chartData = results.map(r => ({
     name: r.name.replace(/\.[^.]+$/, "").slice(0, 14),
     score: parseFloat(((r.score || 0) * 100).toFixed(1)),
   }));
 
+  // Shared inline style objects for container cards and section labels
   const card = { background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 20, padding: 28 };
   const label = { display: "block", fontSize: 11, fontWeight: 700, color: "#64748b", marginBottom: 10, letterSpacing: "0.07em", textTransform: "uppercase" };
 
   return (
     <>
+      {/* Global CSS styles, Google Fonts import, custom scrollbar, and keyframe animations */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -426,6 +469,7 @@ export default function App() {
               </div>
             </div>
 
+            {/* Job Description textarea input */}
             <label style={label}>Job Description</label>
             <textarea
               value={jobDescription}
@@ -437,6 +481,7 @@ export default function App() {
               onBlur={e => e.target.style.borderColor = "rgba(255,255,255,0.07)"}
             />
 
+            {/* Drag-and-drop and click-to-browse resume upload zone */}
             <label style={{ ...label, marginTop: 22 }}>Resumes (PDF / DOCX)</label>
             <div
               onClick={() => document.getElementById("file-input").click()}
@@ -449,6 +494,7 @@ export default function App() {
               <input id="file-input" type="file" multiple accept=".pdf,.docx" style={{ display: "none" }} onChange={e => handleFiles(e.target.files)} />
             </div>
 
+            {/* List of currently selected resume files with individual remove buttons */}
             {files.length > 0 && (
               <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 5 }}>
                 {files.map((f, i) => (
@@ -461,23 +507,26 @@ export default function App() {
               </div>
             )}
 
+            {/* Inline validation and API error banner */}
             {error && (
               <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8, color: "#f87171", fontSize: 13 }}>
                 <AlertCircle size={13} /> {error}
               </div>
             )}
 
+            {/* Primary action button to run the resume screening pipeline */}
             <button
               onClick={handleSubmit}
               disabled={loading}
               style={{ marginTop: 20, width: "100%", padding: "14px", borderRadius: 12, border: "none", cursor: loading ? "not-allowed" : "pointer", fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "opacity 0.2s, transform 0.1s", opacity: loading ? 0.55 : 1, background: "linear-gradient(135deg, #6366f1 0%, #4338ca 100%)", color: "#fff", boxShadow: loading ? "none" : "0 4px 24px rgba(99,102,241,0.3)", letterSpacing: "0.01em" }}
-              onMouseEnter={e => { if (!loading) e.target.style.opacity = "0.88"; }}
-              onMouseLeave={e => { e.target.style.opacity = "1"; }}>
+              onMouseEnter={e => { if (!loading) e.currentTarget.style.opacity = "0.88"; }}
+              onMouseLeave={e => { e.currentTarget.style.opacity = loading ? "0.55" : "1"; }}>
               {loading
                 ? <><Loader2 size={16} className="spin" /> Gemini AI Analyzing Resumes...</>
                 : <><Sparkles size={14} /> Analyze &amp; Rank with Gemini LLM</>}
             </button>
 
+            {/* Secondary reset button to clear inputs and results */}
             {(jobDescription || files.length > 0 || results.length > 0) && (
               <button
                 onClick={handleReset}
@@ -592,7 +641,7 @@ export default function App() {
                 <BarChart data={chartData} barSize={26}>
                   <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} domain={[0, 100]} unit="%" />
-                  <Tooltip contentStyle={{ background: "#ffffff", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 10, fontSize: 12 }} labelStyle={{ color: "#777e82" }} formatter={v => [`${v}%`, "Match"]} />
+                  <Tooltip contentStyle={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, fontSize: 12, color: "#f1f5f9" }} itemStyle={{ color: "#e2e8f0" }} labelStyle={{ color: "#94a3b8" }} formatter={v => [`${v}%`, "Match"]} />
                   <Bar dataKey="score" radius={[5, 5, 0, 0]}>
                     {chartData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                   </Bar>
@@ -612,7 +661,7 @@ export default function App() {
                 <div key={res.__idx ?? idx} className="fade-up" style={{ opacity: 0, animationDelay: `${idx * 0.07}s` }}>
                   <CandidateCard
                     res={res}
-                    rank={idx + 1}
+                    rank={(res.__idx ?? idx) + 1}
                     expanded={!!expanded[res.__idx ?? idx]}
                     onToggle={() => setExpanded(p => ({ ...p, [res.__idx ?? idx]: !p[res.__idx ?? idx] }))}
                   />

@@ -1,3 +1,4 @@
+# FastAPI framework and core dependencies for PDF/DOCX parsing and Gemini LLM calls
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -13,8 +14,10 @@ import json
 from datetime import datetime
 from typing import List
 
+# Initialize the FastAPI application instance
 app = FastAPI(title="Smart Resume Screener API", version="3.0")
 
+# Enable Cross-Origin Resource Sharing (CORS) so the React frontend can call the API
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,6 +26,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Configure directory paths for storing generated CSV results and tracking the latest run
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RESULTS_DIR = os.path.join(BASE_DIR, "results")
 LATEST_POINTER = os.path.join(RESULTS_DIR, "latest.txt")
@@ -34,19 +38,22 @@ ALLOWED_EXTENSIONS = {".pdf", ".docx"}
 MAX_FILES = 10
 MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB per file
 PER_RESUME_CHARS = 4000
-TOTAL_PROMPT_CHARS = 32000
+TOTAL_PROMPT_CHARS = 45000  # Supports all 10 resumes (10 * 4000 = 40000 chars) without dropping any
 
 # --------------------------------------------------
 # Text Extraction with Robust Error Handling
 # --------------------------------------------------
+# Extract plain text from uploaded PDF or DOCX resume bytes
 def extract_text(file_bytes: bytes, filename: str) -> str:
     try:
+        # Handle PDF files using PyMuPDF (fitz)
         if filename.lower().endswith(".pdf"):
             doc = fitz.open(stream=file_bytes, filetype="pdf")
             try:
                 return " ".join([page.get_text() for page in doc])
             finally:
                 doc.close()
+        # Handle Word documents (.docx), extracting paragraphs, tables, headers, and footers
         elif filename.lower().endswith(".docx"):
             d = docx.Document(io.BytesIO(file_bytes))
             parts = [p.text for p in d.paragraphs]
@@ -64,6 +71,7 @@ def extract_text(file_bytes: bytes, filename: str) -> str:
     return ""
 
 
+# Clamp any numeric score to the valid [0.0, 1.0] range
 def clamp01(value, default: float = 0.0) -> float:
     try:
         v = float(value)
@@ -72,17 +80,22 @@ def clamp01(value, default: float = 0.0) -> float:
     return max(0.0, min(1.0, v))
 
 
+# Normalize a 0-10 integer score from Gemini (or an already-scaled 0.0-1.0 float) into [0.0, 1.0]
 def norm10(value, default: float = 0.0) -> float:
     """Accept either a 0-10 integer or an already-scaled 0.0-1.0 float."""
     try:
         v = float(value)
     except (TypeError, ValueError):
         return default
-    if v > 1.0:  # 0-10 scale from the LLM
+    is_int_input = (isinstance(value, int) and not isinstance(value, bool)) or (
+        isinstance(value, str) and value.strip().isdigit()
+    )
+    if is_int_input or v > 1.0:  # 0-10 integer scale from the LLM (including integer 1 -> 0.1)
         v = v / 10.0
     return max(0.0, min(1.0, v))
 
 
+# Map a normalized 0.0-1.0 overall score to a letter grade (A through F)
 def grade_from_score(score: float) -> str:
     if score >= 0.8: return "A"
     if score >= 0.65: return "B"
@@ -91,28 +104,39 @@ def grade_from_score(score: float) -> str:
     return "F"
 
 
+# Sanitize and normalize a single candidate evaluation dictionary returned by Gemini
 def normalize_result(r: dict, fallback_name: str = "unknown") -> dict:
     if not isinstance(r, dict): r = {}
+    try:
+        yrs = max(0, int(float(r.get("years_experience", 0) or 0)))
+    except (TypeError, ValueError):
+        yrs = 0
     return {
         "name": str(r.get("name") or fallback_name),
         "experience_score": round(norm10(r.get("experience_score", 0.0)), 2),
         "education_score": round(norm10(r.get("education_score", 0.0)), 2),
         "summary_score": round(norm10(r.get("summary_score", 0.0)), 2),
-        "years_experience": max(0, int(r.get("years_experience", 0) or 0)),
+        "years_experience": yrs,
         "summary": str(r.get("summary") or ""),
     }
 
 
+# Strip optional markdown code fences and parse JSON from the Gemini response text
 def coerce_json(content: str) -> dict:
     text = (content or "").strip()
     text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\s*```$", "", text)
     try:
-        return json.loads(text)
+        parsed = json.loads(text)
     except json.JSONDecodeError:
         match = re.search(r"\{.*\}", text, flags=re.DOTALL)
-        if match: return json.loads(match.group(0))
-        raise
+        if match:
+            parsed = json.loads(match.group(0))
+        else:
+            raise
+    if isinstance(parsed, list):
+        return {"results": parsed}
+    return parsed if isinstance(parsed, dict) else {"results": []}
 
 
 # --------------------------------------------------
@@ -349,17 +373,20 @@ SKILL_ALIASES = {
     "time management": ["prioritization", "prioritisation"],
 }
 
+# Phrases inside a sentence that indicate a skill is optional / nice-to-have rather than mandatory
 NICE_CUE_WORDS = (
-    "nice-to-have", "nice to have", "nice-to-haves", "bonus", "plus",
+    "nice-to-have", "nice to have", "nice-to-haves", "bonus",
     "preferred", "desirable", "optional", "good to have", "strong plus",
-    "a plus", "pluses",
+    "a plus", "is a plus", "are a plus", "pluses",
 )
 
+# Section headers that mark the beginning of a "Nice-to-Have / Preferred" block in a JD
 NICE_HEADERS = (
     "nice-to-have", "nice to have", "bonus", "preferred", "desirable",
     "optional", "good to have", "plus",
 )
 
+# Standard JD section headers that end a "Nice-to-Have" block and return to normal parsing
 OTHER_HEADERS = (
     "about the role", "about", "responsibilities", "responsibility",
     "requirements", "requirement", "required", "qualifications",
@@ -368,29 +395,35 @@ OTHER_HEADERS = (
 )
 
 
+# Split raw text into individual sentences or bullet lines for granular analysis
 def split_sentences(text: str) -> List[str]:
     parts = re.split(r"[\n;]+|[.!?]+\s+", text)
     return [p.strip() for p in parts if p.strip()]
 
 
+# Check whether a line/fragment matches a known section header
 def is_header(fragment: str, headers) -> bool:
     head = fragment.strip().lower().rstrip(":").strip()
     return any(head == h or head.startswith(h + " ") or head.startswith(h + ":") for h in headers)
 
 
+# Perform whole-word boundary matching for any skill or alias variant within lowercase text
 def any_variant_in_text(variants: List[str], text_lower: str) -> bool:
     return any(re.search(r"(?<![\w.])" + re.escape(v.lower()) + r"(?![\w])", text_lower) for v in variants)
 
 
+# Check if a canonical skill or any of its aliases appear in the given lowercase text
 def skill_in_text(skill: str, text_lower: str) -> bool:
     return any_variant_in_text([skill] + SKILL_ALIASES.get(skill.lower(), []), text_lower)
 
 
+# Deterministically extract required skills, nice-to-have skills, required years, and role title from the JD
 def extract_jd_skills(jd_text: str) -> dict:
     text_lower = jd_text.lower()
     sentences = split_sentences(jd_text)
     cue_flags = []
     in_nice_section = False
+    # Identify which sentences belong to a "nice-to-have" section or contain optional cue phrases
     for s in sentences:
         if is_header(s, NICE_HEADERS):
             in_nice_section = True
@@ -400,9 +433,10 @@ def extract_jd_skills(jd_text: str) -> dict:
             in_nice_section = False
             cue_flags.append(False)
             continue
-        cue_flags.append(in_nice_section or any(c in s.lower() for c in NICE_CUE_WORDS))
+        cue_flags.append(in_nice_section or any_variant_in_text(list(NICE_CUE_WORDS), s.lower()))
     cue_idx = {i for i, flag in enumerate(cue_flags) if flag}
 
+    # Classify each detected skill into required vs. nice-to-have based on where it appears
     required, nice = [], []
     for skill in sorted(SKILL_ALIASES):
         if not skill_in_text(skill, text_lower): continue
@@ -412,6 +446,7 @@ def extract_jd_skills(jd_text: str) -> dict:
         if in_cue and not in_plain and cue_idx: nice.append(skill)
         else: required.append(skill)
 
+    # Extract minimum years of experience and job role title when present in the JD
     exp_match = re.search(r"(\d+)\+?\s*(?:years?|yrs?)\s+(?:of\s+)?experience", text_lower)
     return {
         "required_skills": required,
@@ -423,11 +458,13 @@ def extract_jd_skills(jd_text: str) -> dict:
     }
 
 
+# Keywords indicating that a nearby date range belongs to education rather than work experience
 EDU_INDICATORS = (
     "university", "college", "school", "bachelor", "b.tech", "b.e.", "master", "m.tech",
     "diploma", "degree", "hsc", "ssc", "10th", "12th", "phd", "graduation",
     "academics", "coursework", "education", "institute",
 )
+# Keywords indicating that a nearby date range belongs to professional work or internships
 WORK_INDICATORS = (
     "intern", "experience", "work", "employ", "freelance", "self-employed", "engineer",
     "developer", "analyst", "designer", "trainee", "assistant", "staff", "lead",
@@ -435,14 +472,16 @@ WORK_INDICATORS = (
     "researcher", "tutor", "member",
 )
 
-# Month can be a name ("Jan 2022"), a number ("01/2022"), or omitted ("2022")
-_DATE_PREFIX = r"(?:[a-z]{3,9}\s+|\d{1,2}/)?"
+# Month can be a name ("Jan 2022" or "Jan. 2022"), a number ("01/2022"), or omitted ("2022")
+_DATE_PREFIX = r"(?:[a-z]{3,9}\.?\s+|\d{1,2}[/-])?"
+# Regex pattern to match work/education date ranges such as "Jan 2022 - Present" or "2020 - 2023"
 DATE_RANGE_RE = re.compile(
     _DATE_PREFIX + r"(\d{4})(?:/\d{1,2})?\s*(?:[-\u2013\u2014]|\bto\b)\s*"
     + _DATE_PREFIX + r"(\d{4}|present|current|till|now)(?:/\d{1,2})?"
 )
 
 
+# Measure character distance from a date match anchor to the closest indicator keyword in a text window
 def _nearest_distance(needle_words, window: str, anchor: int) -> int:
     best = 10**9
     for w in needle_words:
@@ -452,6 +491,7 @@ def _nearest_distance(needle_words, window: str, anchor: int) -> int:
     return best
 
 
+# Deterministically compute total years of professional work experience from resume date ranges
 def extract_years_from_resume(text: str) -> int:
     """Count professional years from date ranges (deterministic).
 
@@ -474,9 +514,13 @@ def extract_years_from_resume(text: str) -> int:
             e = current_year if m.group(2) in ("present", "current", "till", "now") else int(m.group(2))
         except ValueError:
             continue
-        if 1990 <= s <= current_year and s < e and (e - s) <= 10:
+        # Treat same-year work stints (e.g., "Jan 2025 - Nov 2025") as a 1-year interval [s, s + 1]
+        if s == e and 1990 <= s <= current_year:
+            e = s + 1
+        if 1990 <= s <= current_year and s < e and (e - s) <= 30:
             ranges.append((s, e))
 
+    # Merge overlapping date intervals so concurrent roles are not double-counted
     years = 0
     if ranges:
         ranges.sort()
@@ -499,17 +543,30 @@ def extract_years_from_resume(text: str) -> int:
     return min(years, 20)
 
 
+# Compare a candidate's resume text against the JD's required and nice-to-have skills
 def match_resume_skills(text_lower: str, required: List[str], nice: List[str]) -> dict:
     matched = [s for s in required if skill_in_text(s, text_lower)]
+    nice_matched = [s for s in nice if skill_in_text(s, text_lower)]
+    if required:
+        skills_score = round(len(matched) / len(required), 3)
+        skill_match_pct = round(len(matched) / len(required) * 100, 1)
+    elif nice:
+        skills_score = round(len(nice_matched) / len(nice), 3)
+        skill_match_pct = round(len(nice_matched) / len(nice) * 100, 1)
+    else:
+        # Do not penalize candidates when the JD specifies no dictionary-detectable skills
+        skills_score = 1.0
+        skill_match_pct = 100.0
     return {
         "matched_skills": matched,
         "missing_skills": [s for s in required if not skill_in_text(s, text_lower)],
-        "nice_matched": [s for s in nice if skill_in_text(s, text_lower)],
-        "skill_match_pct": round((len(matched) / len(required) * 100) if required else 0.0, 1),
-        "skills_score": round((len(matched) / len(required)) if required else 0.0, 3),
+        "nice_matched": nice_matched,
+        "skill_match_pct": skill_match_pct,
+        "skills_score": skills_score,
     }
 
 
+# Compute a 0.0-1.0 score comparing the candidate's years of experience against the JD requirement
 def years_score(resume_years: int, required_years) -> float:
     if not required_years: return 1.0
     if resume_years == 0: return 0.5
@@ -519,12 +576,14 @@ def years_score(resume_years: int, required_years) -> float:
 # --------------------------------------------------
 # Gemini LLM Integration
 # --------------------------------------------------
+# Send the JD and extracted resume texts to Google Gemini for semantic scoring and evaluation summaries
 def analyze_with_gemini(job_desc: str, resume_texts: List[dict], api_key: str, model_name: str = "gemini-2.5-flash"):
     try:
         client = genai.Client(api_key=api_key.strip())
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Gemini API initialization error: {str(e)}")
 
+    # Truncate each resume to PER_RESUME_CHARS within TOTAL_PROMPT_CHARS budget
     current_year = datetime.now().year
     chunks = []
     budget = TOTAL_PROMPT_CHARS
@@ -535,6 +594,7 @@ def analyze_with_gemini(job_desc: str, resume_texts: List[dict], api_key: str, m
         budget -= take
         chunks.append(f"RESUME: {r['filename']}\n{text[:take]}")
 
+    # Construct the structured evaluation prompt for Gemini
     prompt = f"""
 You are an expert technical recruiter screening resumes against a job description.
 For EACH candidate, judge only three things and return a JSON object.
@@ -570,6 +630,7 @@ Scoring rules — give INTEGER scores from 0 to 10 (never decimals):
 - Output ONLY valid JSON, no markdown fences or extra text.
 """
 
+    # Invoke Gemini with deterministic temperature=0.0 and strict JSON output mode
     def _generate():
         return client.models.generate_content(
             model=model_name,
@@ -580,6 +641,7 @@ Scoring rules — give INTEGER scores from 0 to 10 (never decimals):
             ),
         )
 
+    # Execute the request with one automatic retry for transient 503 overload errors
     for attempt in range(2):  # one quick retry for transient overload
         try:
             return coerce_json((_generate().text or ""))
@@ -602,6 +664,7 @@ Scoring rules — give INTEGER scores from 0 to 10 (never decimals):
             raise HTTPException(status_code=400, detail=f"Gemini error: {msg}")
 
 
+# Export the ranked candidate screening results to a timestamped CSV file and update latest.txt
 def write_results_csv(results: List[dict]) -> str:
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"results_{stamp}.csv"
@@ -624,6 +687,7 @@ def write_results_csv(results: List[dict]) -> str:
     return filename
 
 
+# Health check endpoint to verify the backend server is running
 @app.get("/health")
 async def health(): return {"status": "ok", "service": "Smart Resume Screener API", "version": "3.0"}
 
@@ -635,6 +699,7 @@ NON_TEXT_MODEL_TOKENS = (
 )
 
 
+# Sort helper to order Gemini models with -latest and newer version numbers first
 def model_rank(name: str):
     """Newest first: -latest aliases, then version number desc, lite/preview after full."""
     ver = (999, 0) if name.endswith("-latest") else (0, 0)
@@ -645,6 +710,7 @@ def model_rank(name: str):
     return (-ver[0], -ver[1], lighter, name)
 
 
+# Endpoint to fetch live text-capable Gemini models available for the user's API key
 @app.post("/models")
 async def get_gemini_models(api_key: str = Form(...)):
     try:
@@ -665,8 +731,10 @@ async def get_gemini_models(api_key: str = Form(...)):
     return {"models": sorted(set(gemini), key=model_rank)}
 
 
+# Main endpoint: validate inputs, extract resume text, combine deterministic + Gemini scores, and rank candidates
 @app.post("/match")
 async def match_resumes(job_desc: str = Form(...), api_key: str = Form(...), model_name: str = Form(...), resumes: List[UploadFile] = File(...)):
+    # Validate required form parameters and file count limits
     if not job_desc.strip():
         raise HTTPException(status_code=400, detail="Job description is required")
     if not api_key.strip():
@@ -678,6 +746,7 @@ async def match_resumes(job_desc: str = Form(...), api_key: str = Form(...), mod
     if len(resumes) > MAX_FILES:
         raise HTTPException(status_code=400, detail=f"Too many files: {len(resumes)}. Maximum is {MAX_FILES}.")
 
+    # Read, validate, and extract plain text from each uploaded resume file
     resume_texts = []
     for idx, file in enumerate(resumes):
         ext = os.path.splitext(file.filename or "")[1].lower()
@@ -691,9 +760,11 @@ async def match_resumes(job_desc: str = Form(...), api_key: str = Form(...), mod
         extracted = extract_text(file_bytes, file.filename)
         resume_texts.append({"id": idx, "filename": file.filename, "text": extracted if extracted.strip() else "[Could not extract text]"})
 
+    # Run deterministic JD skill extraction and Gemini semantic analysis
     jd = extract_jd_skills(job_desc)
     analysis_data = analyze_with_gemini(job_desc, resume_texts, api_key, model_name)
 
+    # Index normalized Gemini evaluation results by filename for lookup
     raw_sections = analysis_data.get("results", [])
     if not isinstance(raw_sections, list):
         raw_sections = []
@@ -703,6 +774,7 @@ async def match_resumes(job_desc: str = Form(...), api_key: str = Form(...), mod
         by_name.setdefault(s["name"], s)
         by_name.setdefault(os.path.basename(s["name"]), s)
 
+    # Compute final weighted score, grade, and verdict for each candidate
     results = []
     for i, rt in enumerate(resume_texts):
         text_lower = rt["text"].lower()
@@ -722,6 +794,7 @@ async def match_resumes(job_desc: str = Form(...), api_key: str = Form(...), mod
             "nice_matched": skills["nice_matched"], "years_experience": y, "summary": sec["summary"]
         })
 
+    # Sort candidates highest-to-lowest by overall score and flag the top candidate as Best Fit
     results.sort(key=lambda x: x["score"], reverse=True)
     if results:
         results[0]["is_best"] = True
@@ -731,6 +804,7 @@ async def match_resumes(job_desc: str = Form(...), api_key: str = Form(...), mod
     return {"results": results, "jd_analysis": jd, "download_file": write_results_csv(results) if results else None}
 
 
+# Validate and resolve a CSV filename inside RESULTS_DIR while preventing directory traversal
 def _resolve_result_file(filename: str) -> str:
     """Path-traversal-safe resolution of a results CSV filename."""
     if not re.fullmatch(r"results_\d{8}_\d{4,6}\.csv", filename or ""):
@@ -741,11 +815,13 @@ def _resolve_result_file(filename: str) -> str:
     return path
 
 
+# Endpoint to download a specific screening run's CSV file by filename
 @app.get("/download/{filename}")
 async def download_result_file(filename: str):
     return FileResponse(_resolve_result_file(filename), media_type="text/csv", filename="screening_results.csv")
 
 
+# Endpoint to download the most recent screening run's CSV file
 @app.get("/download")
 async def download_results():
     if not os.path.exists(LATEST_POINTER):
@@ -754,6 +830,7 @@ async def download_results():
         return FileResponse(_resolve_result_file(f.read().strip()), media_type="text/csv", filename="screening_results.csv")
 
 
+# Launch the Uvicorn development server on port 5000 when executed directly
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="127.0.0.1", port=5000, reload=True)
